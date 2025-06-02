@@ -1,8 +1,19 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DynamoDB table for URL Shortener service'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+
 Resources:
   UrlMappingsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: url-mappings
+      TableName: !Sub '${Environment}-url-mappings'
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: shortCode
           AttributeType: S
@@ -18,7 +29,28 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
-      BillingMode: PAY_PER_REQUEST
       TimeToLiveSpecification:
         AttributeName: expiresAt
         Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: URLShortener
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Database
+
+Outputs:
+  TableName:
+    Description: 'Name of the DynamoDB table'
+    Value: !Ref UrlMappingsTable
+    Export:
+      Name: !Sub '${Environment}-url-mappings-table-name'
+  
+  TableArn:
+    Description: 'ARN of the DynamoDB table'
+    Value: !GetAtt UrlMappingsTable.Arn
+    Export:
+      Name: !Sub '${Environment}-url-mappings-table-arn'
