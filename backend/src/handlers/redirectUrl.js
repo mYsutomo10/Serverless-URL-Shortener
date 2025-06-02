@@ -1,299 +1,74 @@
-const AWS = require('aws-sdk');
+const DynamoDBService = require('../utils/dynamodb');
+const Validator = require('../utils/validator');
 
-const dynamodb = new AWS.DynamoDB.DocumentClient();
-const tableName = process.env.DYNAMODB_TABLE;
-
-// CORS headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-  'Access-Control-Allow-Methods': 'GET,OPTIONS'
-};
-
-// Get URL mapping from DynamoDB
-const getUrlMapping = async (shortCode) => {
-  try {
-    const params = {
-      TableName: tableName,
-      Key: { shortCode }
-    };
-
-    const result = await dynamodb.get(params).promise();
-    return result.Item;
-  } catch (error) {
-    console.error('Error fetching URL mapping:', error);
-    throw error;
-  }
-};
-
-// Update click count
-const incrementClickCount = async (shortCode) => {
-  try {
-    const params = {
-      TableName: tableName,
-      Key: { shortCode },
-      UpdateExpression: 'ADD clickCount :increment, lastAccessedAt :timestamp',
-      ExpressionAttributeValues: {
-        ':increment': 1,
-        ':timestamp': new Date().toISOString()
-      },
-      ReturnValues: 'UPDATED_NEW'
-    };
-
-    await dynamodb.update(params).promise();
-  } catch (error) {
-    console.error('Error updating click count:', error);
-    // Don't throw error here to avoid breaking redirect functionality
-  }
-};
-
-// Validate short code format
-const isValidShortCode = (shortCode) => {
-  return shortCode && /^[A-Za-z0-9]{3,20}$/.test(shortCode);
-};
-
-// Check if URL has expired
-const isExpired = (expiresAt) => {
-  if (!expiresAt) return false;
-  
-  const now = new Date();
-  const expireDate = typeof expiresAt === 'number' 
-    ? new Date(expiresAt * 1000) // Unix timestamp
-    : new Date(expiresAt); // ISO string
-    
-  return now > expireDate;
-};
-
-// Log analytics data
-const logAnalytics = (event, shortCode, originalUrl) => {
-  const analyticsData = {
-    shortCode,
-    originalUrl,
-    timestamp: new Date().toISOString(),
-    userAgent: event.headers?.['User-Agent'] || 'unknown',
-    referer: event.headers?.Referer || event.headers?.referer || 'direct',
-    sourceIp: event.requestContext?.identity?.sourceIp || 'unknown',
-    country: event.headers?.['CloudFront-Viewer-Country'] || 'unknown',
-    requestId: event.requestContext?.requestId
-  };
-
-  console.log('Analytics:', JSON.stringify(analyticsData));
-};
+const createResponse = (statusCode, body, headers = {}) => ({
+  statusCode,
+  headers: {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    ...headers
+  },
+  body: typeof body === 'string' ? body : JSON.stringify(body)
+});
 
 exports.handler = async (event) => {
-  console.log('Received event:', JSON.stringify(event, null, 2));
-
-  // Handle preflight OPTIONS request
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: corsHeaders,
-      body: ''
-    };
-  }
-
+  console.log('Redirect request:', JSON.stringify(event, null, 2));
+  
   try {
-    // Extract short code from path parameters
     const shortCode = event.pathParameters?.shortCode;
-
-    // Validate short code
+    
     if (!shortCode) {
-      return {
-        statusCode: 400,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'text/html'
-        },
-        body: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Error - URL Shortener</title>
-            <style>
-              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-              .error { color: #d32f2f; }
-            </style>
-          </head>
-          <body>
-            <h1 class="error">Invalid Short Code</h1>
-            <p>The requested short code is missing or invalid.</p>
-            <a href="/">← Back to Home</a>
-          </body>
-          </html>
-        `
-      };
+      return createResponse(400, {
+        error: 'Bad Request',
+        message: 'Short code is required'
+      });
     }
-
-    if (!isValidShortCode(shortCode)) {
-      return {
-        statusCode: 400,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'text/html'
-        },
-        body: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Error - URL Shortener</title>
-            <style>
-              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-              .error { color: #d32f2f; }
-            </style>
-          </head>
-          <body>
-            <h1 class="error">Invalid Short Code Format</h1>
-            <p>The short code "${shortCode}" has an invalid format.</p>
-            <a href="/">← Back to Home</a>
-          </body>
-          </html>
-        `
-      };
+    
+    // Validate short code format
+    try {
+      Validator.validateShortCode(shortCode);
+    } catch (error) {
+      return createResponse(400, {
+        error: 'Invalid Short Code',
+        message: error.message
+      });
     }
-
+    
     // Get URL mapping from database
-    const urlMapping = await getUrlMapping(shortCode);
-
+    const urlMapping = await DynamoDBService.getItem(shortCode);
+    
     if (!urlMapping) {
-      console.log(`Short code not found: ${shortCode}`);
-      
-      return {
-        statusCode: 404,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'text/html'
-        },
-        body: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Not Found - URL Shortener</title>
-            <style>
-              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-              .error { color: #d32f2f; }
-              .code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; }
-            </style>
-          </head>
-          <body>
-            <h1 class="error">Short URL Not Found</h1>
-            <p>The short code <span class="code">${shortCode}</span> does not exist or has been removed.</p>
-            <a href="/">← Back to Home</a>
-          </body>
-          </html>
-        `
-      };
+      return createResponse(404, {
+        error: 'Not Found',
+        message: 'Short URL not found'
+      });
     }
-
+    
     // Check if URL has expired
-    if (isExpired(urlMapping.expiresAt)) {
-      console.log(`URL expired: ${shortCode}`);
-      
-      return {
-        statusCode: 410,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'text/html'
-        },
-        body: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Expired - URL Shortener</title>
-            <style>
-              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-              .error { color: #d32f2f; }
-            </style>
-          </head>
-          <body>
-            <h1 class="error">Short URL Expired</h1>
-            <p>This short URL has expired and is no longer valid.</p>
-            <a href="/">← Back to Home</a>
-          </body>
-          </html>
-        `
-      };
+    if (urlMapping.expiresAt && urlMapping.expiresAt < Math.floor(Date.now() / 1000)) {
+      return createResponse(410, {
+        error: 'URL Expired',
+        message: 'This short URL has expired'
+      });
     }
-
-    const { originalUrl } = urlMapping;
-
-    // Validate original URL exists
-    if (!originalUrl) {
-      console.error(`No original URL found for short code: ${shortCode}`);
-      
-      return {
-        statusCode: 500,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'text/html'
-        },
-        body: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Error - URL Shortener</title>
-            <style>
-              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-              .error { color: #d32f2f; }
-            </style>
-          </head>
-          <body>
-            <h1 class="error">Data Error</h1>
-            <p>The original URL data is corrupted or missing.</p>
-            <a href="/">← Back to Home</a>
-          </body>
-          </html>
-        `
-      };
-    }
-
-    // Log analytics and increment click count (async, don't wait)
-    logAnalytics(event, shortCode, originalUrl);
-    incrementClickCount(shortCode).catch(err => 
-      console.error('Failed to increment click count:', err)
-    );
-
-    console.log(`Redirecting ${shortCode} to ${originalUrl}`);
-
-    // Return redirect response
-    return {
-      statusCode: 301,
-      headers: {
-        ...corsHeaders,
-        'Location': originalUrl,
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      },
-      body: ''
-    };
-
+    
+    // Update click count asynchronously
+    DynamoDBService.updateClickCount(shortCode).catch(error => {
+      console.error('Error updating click count:', error);
+    });
+    
+    // Redirect to original URL
+    return createResponse(302, '', {
+      Location: urlMapping.originalUrl,
+      'Cache-Control': 'no-cache'
+    });
+    
   } catch (error) {
-    console.error('Error processing redirect:', error);
-
-    return {
-      statusCode: 500,
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'text/html'
-      },
-      body: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Error - URL Shortener</title>
-          <style>
-            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-            .error { color: #d32f2f; }
-          </style>
-        </head>
-        <body>
-          <h1 class="error">Server Error</h1>
-          <p>An unexpected error occurred. Please try again later.</p>
-          <p><small>Request ID: ${event.requestContext?.requestId || 'unknown'}</small></p>
-          <a href="/">← Back to Home</a>
-        </body>
-        </html>
-      `
-    };
+    console.error('Error in redirect handler:', error);
+    
+    return createResponse(500, {
+      error: 'Internal Server Error',
+      message: 'Unable to process redirect'
+    });
   }
 };
