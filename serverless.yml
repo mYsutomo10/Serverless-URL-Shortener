@@ -1,0 +1,48 @@
+service: url-shortener
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ap-southeast-1
+  stage: prod
+  environment:
+    TABLE_NAME: url-mappings
+    BASE_URL: https://short.ly
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+      Resource:
+        - arn:aws:dynamodb:ap-southeast-1:*:*:table/url-mappings
+
+functions:
+  createShortUrl:
+    handler: src/handlers/createShortUrl.handler
+    events:
+      - httpApi:
+          path: /shorten
+          method: post
+
+  redirect:
+    handler: src/handlers/redirect.handler
+    events:
+      - httpApi:
+          path: /{shortCode}
+          method: get
+
+  analytics:
+    handler: src/handlers/analytics.handler
+    events:
+      - httpApi:
+          path: /stats/{shortCode}
+          method: get
+
+plugins:
+  - serverless-offline
+
+package:
+  individually: true
