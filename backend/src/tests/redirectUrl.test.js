@@ -1,4 +1,4 @@
-const { handler } = require('../handlers/redirectUrl');
+const { handler } = require('../handlers/redirect');
 
 // Mock the DynamoDB service
 jest.mock('../utils/dynamodb');
