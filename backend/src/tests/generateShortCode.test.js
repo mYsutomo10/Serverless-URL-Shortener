@@ -1,4 +1,4 @@
-const { generateShortCode } = require('../src/utils/generateShortCode');
+const { generateShortCode } = require('../utils/generateShortCode');
 
 describe('generateShortCode', () => {
   it('should return a 6-character code', () => {

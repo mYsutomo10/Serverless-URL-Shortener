@@ -9,7 +9,7 @@ jest.mock('aws-sdk', () => {
 process.env.TABLE_NAME = 'url-mappings';
 process.env.BASE_URL = 'https://short.ly';
 
-const { handler } = require('../src/handlers/createShortUrl');
+const { handler } = require('../handlers/createShortUrl');
 
 describe('Create Short URL', () => {
   it('should return 400 if invalid URL', async () => {
