@@ -1,5 +1,4 @@
-<<<<<<< HEAD
-# AWS URL Shortener
+# ZURL - AWS URL Shortener
 
 A production-ready, serverless URL shortener built with AWS Lambda, API Gateway, and DynamoDB. Features a beautiful React frontend and comprehensive monitoring with CloudWatch.
 
@@ -544,4 +543,3 @@ aws s3 rb s3://your-frontend-bucket
 - **API Gateway**: `/aws/apigateway/url-shortener-dev`
 - **Lambda Functions**: `/aws/lambda/url-shortener-shorten-dev`
 - **DynamoDB**: CloudWatch Metrics (no logs by default)
->>>>>>> e4d0bcd14102ae0bf9201dd3d9e623f6eb8c021c
