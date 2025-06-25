@@ -1,0 +1,21 @@
+{
+  "name": "url-shortener-lambda",
+  "version": "1.0.0",
+  "description": "AWS Lambda functions for URL shortener",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1691.0",
+    "uuid": "^10.0.0"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "url-shortener",
+    "serverless"
+  ],
+  "author": "URL Shortener App",
+  "license": "MIT"
+}
